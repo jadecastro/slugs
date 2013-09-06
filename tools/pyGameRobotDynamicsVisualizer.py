@@ -26,6 +26,7 @@ import itertools
 import Image
 import os, pygame, pygame.locals
 import numpy as np
+import itertools
 
 # ==================================
 # Settings
@@ -78,19 +79,26 @@ print colorCoding
 robotmdlfile = pngFileBasis+".robotmdl"
 robotModel = open(robotmdlfile,"r")
 paramsState = False
+cyclicState = False
 motionStateOutputState = False
 motionControlOutputState = False
 systemModelState = False
 modelParams = []
+cyclicVars = []
 motionStateVars = []
 motionControlVars = []
 systemModel = []
 for line in robotModel.readlines():
     line = line.strip()
     if line.startswith("["):
+        cyclicState = False
         motionStateOutputState = False
         motionControlOutputState = False
         systemModelState = False
+    if line=="[CYCLIC]":
+        cyclicState = True
+    elif cyclicState and len(line)>0 and not line.startswith("#"):
+        cyclicVars.append(line)
     if line=="[MOTION STATE OUTPUT]":
         motionStateOutputState = True
     elif motionStateOutputState and len(line)>0 and not line.startswith("#"):
@@ -151,10 +159,10 @@ for i,varName in enumerate(motionStateVars):
         systemModel[i] = systemModel[i][0:systemModel[i].rfind('cos(')]+'np.'+systemModel[i][systemModel[i].rfind('cos('):]
     while systemModel[i].rfind('tan(') >= 0 and systemModel[i][systemModel[i].rfind('tan(')-3:systemModel[i].rfind('tan(')] != 'np.':
         systemModel[i] = systemModel[i][0:systemModel[i].rfind('tan(')]+'np.'+systemModel[i][systemModel[i].rfind('tan('):]
-tmp = [[motionStateParams[i][0]+eta/2-1e-4,motionStateParams[i][1]-eta/2+1e-4] for i in range(len(motionStateParams))]
+tmp = [[motionStateParams[i][0]+eta/2-1e-6,motionStateParams[i][1]-eta/2+1e-6] for i in range(len(motionStateParams))]
 minMaxState = map(list,zip(*tmp))  # bounds on the continuous states
 minMaxStateCent = map(list,zip(*motionStateParams))  # bounds on the continuous state centroid
-tmp = [[motionControlParams[i][0]+mu/2-1e-4,motionControlParams[i][1]-mu/2+1e-4] for i in range(len(motionControlParams))]
+tmp = [[motionControlParams[i][0]+mu/2-1e-6,motionControlParams[i][1]-mu/2+1e-6] for i in range(len(motionControlParams))]
 minMaxCtrl = map(list,zip(*tmp))  # bounds on the continuous controls
 minMaxCtrlCent = map(list,zip(*motionControlParams))  # bounds on the continuous control centroid
 
@@ -297,6 +305,21 @@ def actionLoop():
     slugsProcess.stdout.readline() # Skip the prompt
     currentState = slugsProcess.stdout.readline().strip()
 
+    # Pre-store positions
+    doorAndDeliveryInputBitPositions = {}
+    for (a,b) in colorCoding:
+        if b=="Door" or b=="Delivery":
+            for pos,name in enumerate(inputAPs):
+                if name=="door"+str(a) or name=="deliveryrequest"+str(a)  :
+                    doorAndDeliveryInputBitPositions[a] = pos
+
+    # run XMAKETRANS again to get a non-trivial initial state (why?)
+    initInput = currentState[0:len(inputAPs)]
+    slugsProcess.stdin.write("XMAKETRANS_INIT\n"+initInput)
+    slugsProcess.stdin.flush()
+    slugsProcess.stdout.readline() # Skip the prompt
+    currentState = slugsProcess.stdout.readline().strip() 
+
     motionStateRaw = [0]*len(motionStateBitVars)
     for k in xrange(0,len(motionStateBitVars)):
         for i,ap in enumerate(outputAPs):
@@ -312,22 +335,20 @@ def actionLoop():
     motionState = list(np.minimum(np.maximum(motionState,np.array(minMaxState[1])),np.array(minMaxState[0])))
     for i in xrange(0,len(motionState)):
         exec(motionStateVars[i]+str("=motionState[i]"))
+        exec(motionStateVars[i]+str("raw=motionStateRaw[i]"))
 
-    # Pre-store positions
-    doorAndDeliveryInputBitPositions = {}
-    for (a,b) in colorCoding:
-        if b=="Door" or b=="Delivery":
-            for pos,name in enumerate(inputAPs):
-                if name=="door"+str(a) or name=="deliveryrequest"+str(a)  :
-                    doorAndDeliveryInputBitPositions[a] = pos
-
+    loopNumber = 0
+    isPaused = False
     while 1:
+        loopNumber += 1
 
         for event in pygame.event.get():
             if event.type == pygame.locals.QUIT or (event.type == pygame.locals.KEYDOWN and event.key == pygame.locals.K_ESCAPE):
                 slugsProcess.stdin.write("QUIT\n")
                 slugsProcess.stdin.flush()
                 return
+            if (event.type == pygame.locals.KEYDOWN and event.key == pygame.locals.K_SPACE):
+                isPaused = not isPaused
 
         # Obtain robot information for drawing
         motionCtrlRaw = [0]*len(motionControlBitVars)
@@ -345,8 +366,9 @@ def actionLoop():
         motionCtrl = list(np.minimum(np.maximum(motionCtrl,np.array(minMaxCtrl[1])),np.array(minMaxCtrl[0])))
         for i in xrange(0,len(motionCtrl)):
             exec(motionControlVars[i]+str("=motionCtrl[i]"))
-        print v, w
-        print x, y, theta
+            exec(motionControlVars[i]+str("raw=motionCtrlRaw[i]"))
+        print vraw, wraw
+        print xraw, yraw, thetaraw
 
         # Draw pickup/drop
         for i,ap in enumerate(outputAPs):
@@ -474,37 +496,70 @@ def actionLoop():
                         nextInput = nextInput[0:i]+"0"+nextInput[i+1:]
 
         # Execute the continuous transition
-        for i,varName in enumerate(motionStateVars):
-            exec(systemModel[i])
-        preMotionState = []
-        for i,varName in enumerate(motionStateVars):
-            # one-sample update
-            exec(varName+" = "+varName+"_dot*tau + "+varName)
-            exec(varName+" = min([max(["+varName+",minMaxState[1][i]]),minMaxState[0][i]])")
-            exec(varName+"b = np.true_divide(("+varName+" - "+varName+"min),eta)")
-            preMotionState += bin(int(round(eval(varName+'b'))))[2:].zfill(len(motionStateBitVars[i]))
-            preMotionState = ''.join(preMotionState)
-        print eval(varName+'b')
-        print bin(int(round(eval(varName+'b'))))[2:]
-        print preMotionState
-        # preMotionState = preMotionState[::-1] # try reversing the order
-        # print preMotionState
+        if not isPaused:
+            for i,varName in enumerate(motionStateVars):
+                exec(systemModel[i])
+            preMotionState = []
+            for i,varName in enumerate(motionStateVars):
+                # one-sample update
+                exec(varName+" = "+varName+"_dot*tau + "+varName)
+                if varName in cyclicVars:
+                    if eval(varName) < eval(varName+"min"):
+                        exec(varName+"="+varName+"+np.pi")
+                    elif eval(varName) > eval(varName+"max"):
+                        exec(varName+"="+varName+"-np.pi")
+                else:
+                    exec(varName+" = min([max(["+varName+",minMaxState[1][i]]),minMaxState[0][i]])")
+                #exec(varName+"raw = np.true_divide(("+varName+" - "+varName+"min),eta)")
+                exec(varName+"raw = int(round(np.true_divide(("+varName+" - "+varName+"min),eta)))")
+                preMotionState += bin(eval(varName+'raw'))[2:].zfill(len(motionStateBitVars[i]))[::-1]  # rid ourselves of the leading '0b' and reverse BDD bit ordering
+                preMotionState = ''.join(preMotionState)
 
-        # Make the transition
-        slugsProcess.stdin.write("XMAKECONTROLTRANS\n"+nextInput+preMotionState)
-        slugsProcess.stdin.flush()
-        slugsProcess.stdout.readline() # Skip the prompt
-        nextLine = slugsProcess.stdout.readline().strip()
-        if nextLine.startswith("ERROR"):
-            screenBuffer.fill((192, 64, 64)) # Red!
-            # Keep the state the same
+            # preserve the ordering in outputAPs
+            preMotionStateRev = ''
+            for i,ap in enumerate(outputAPs):
+                for  j,ap2 in enumerate(itertools.chain(*motionStateBitVars)):
+                    if ap==ap2:
+                        preMotionStateRev += preMotionState[j]
+
+            # Make the transition
+            slugsProcess.stdin.write("XMAKECONTROLTRANS\n"+nextInput+preMotionStateRev)
+            slugsProcess.stdin.flush()
+            slugsProcess.stdout.readline() # Skip the prompt
+            nextLine = slugsProcess.stdout.readline().strip()
+            if nextLine.startswith("ERROR"):
+                screenBuffer.fill((192, 64, 64)) # Red!
+                # Keep the state the same
+            else:
+                print nextLine
+                currentState = nextLine[:len(inputAPs)]+preMotionStateRev+nextLine[len(preMotionState)+1:] 
+                print currentState
+
+                # Print a state header
+                if (loopNumber % 20)==1:
+                    print "-"*(len(currentState)+2)
+                    apNames = inputAPs+outputAPs
+                    maxLenAPNames = 0
+                    for a in apNames:
+                        maxLenAPNames = max(maxLenAPNames,len(a))
+                    apNamesEqualized = [(" "*(maxLenAPNames-len(a)))+a for a in apNames]
+                    for i in xrange(0,maxLenAPNames):
+                        for a in apNamesEqualized:
+                            sys.stderr.write(a[i])
+                        sys.stderr.write("\n")
+                    print "-"*(len(currentState)+2)
+
+                print >>sys.stderr, currentState
+                screenBuffer.fill((64, 64, 64)) # Gray, as usual
+            
+            # Done
+            clock.tick(10)
         else:
-            currentState = nextLine
-            print >>sys.stderr, currentState
+            # Paused
             screenBuffer.fill((64, 64, 64)) # Gray, as usual
-        
-        # Done
-        clock.tick(10)
+            # Tick
+            clock.tick(3)
+
 
 # ==================================
 # Call main program

@@ -54,5 +54,6 @@ vbit2
 # | & xbit4 ybit4 ! door8
 & xbit4 ybit4
 & & & ! xbit3 ! xbit4 ! ybit3 ! ybit4  
+# & ! ybit3 ! ybit4  
 
 

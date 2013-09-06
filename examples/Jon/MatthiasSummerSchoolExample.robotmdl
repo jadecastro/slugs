@@ -15,6 +15,9 @@ vmin = 0
 wmax = 1
 wmin = -1
 
+[CYCLIC]
+theta
+
 [MOTION STATE OUTPUT]
 x
 y
