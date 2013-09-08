@@ -505,9 +505,9 @@ def actionLoop():
                 exec(varName+" = "+varName+"_dot*tau + "+varName)
                 if varName in cyclicVars:
                     if eval(varName) < eval(varName+"min"):
-                        exec(varName+"="+varName+"+np.pi")
+                        exec(varName+"="+varName+"+2*np.pi")
                     elif eval(varName) > eval(varName+"max"):
-                        exec(varName+"="+varName+"-np.pi")
+                        exec(varName+"="+varName+"-2*np.pi")
                 else:
                     exec(varName+" = min([max(["+varName+",minMaxState[1][i]]),minMaxState[0][i]])")
                 #exec(varName+"raw = np.true_divide(("+varName+" - "+varName+"min),eta)")
