@@ -48,12 +48,12 @@ vbit2
 1
 
 [SYS_TRANS]
-# | | vbit0' vbit1' vbit2'
+# restrict forward velocity
+! & & ! vbit0' ! vbit1' ! vbit2'
+! & & vbit0' ! vbit1' ! vbit2'
 
 [SYS_LIVENESS]
-# | & xbit4 ybit4 ! door8
 & xbit4 ybit4
 & & & ! xbit3 ! xbit4 ! ybit3 ! ybit4  
-# & ! ybit3 ! ybit4  
 
 

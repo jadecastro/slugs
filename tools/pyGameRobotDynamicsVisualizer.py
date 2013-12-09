@@ -1,6 +1,6 @@
 #!/usr/bin/python
 #
-# Animates the robot abstraction using continuous robot dynamics
+# Animates a robot according to a continuous-state robot model driven by a slugs synthesized gr(1) controller
 #
 #
 # REQUIREMENTS FOR PROPER Operation:
@@ -27,11 +27,14 @@ import Image
 import os, pygame, pygame.locals
 import numpy as np
 import itertools
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 
 # ==================================
 # Settings
 # ==================================
 MAGNIFY = 64
+numMinorIters = 20
 
 # ==================================
 # Entry point
@@ -159,12 +162,28 @@ for i,varName in enumerate(motionStateVars):
         systemModel[i] = systemModel[i][0:systemModel[i].rfind('cos(')]+'np.'+systemModel[i][systemModel[i].rfind('cos('):]
     while systemModel[i].rfind('tan(') >= 0 and systemModel[i][systemModel[i].rfind('tan(')-3:systemModel[i].rfind('tan(')] != 'np.':
         systemModel[i] = systemModel[i][0:systemModel[i].rfind('tan(')]+'np.'+systemModel[i][systemModel[i].rfind('tan('):]
-tmp = [[motionStateParams[i][0]+eta/2-1e-6,motionStateParams[i][1]-eta/2+1e-6] for i in range(len(motionStateParams))]
-minMaxState = map(list,zip(*tmp))  # bounds on the continuous states
-minMaxStateCent = map(list,zip(*motionStateParams))  # bounds on the continuous state centroid
-tmp = [[motionControlParams[i][0]+mu/2-1e-6,motionControlParams[i][1]-mu/2+1e-6] for i in range(len(motionControlParams))]
-minMaxCtrl = map(list,zip(*tmp))  # bounds on the continuous controls
-minMaxCtrlCent = map(list,zip(*motionControlParams))  # bounds on the continuous control centroid
+maxMotion = [int(np.floor(np.true_divide((motionStateParams[i][0] - motionStateParams[i][1]),eta))) for i in range(len(motionStateParams))] #greatest index
+tmp = [[motionStateParams[i][0]+1e-6,motionStateParams[i][1]-1e-6] for i in range(len(motionStateParams))]  #based on 0 having no offset
+minMaxState = map(list,zip(*tmp))  # absolute bounds on the continuous states
+vect1 = [np.arange(0,minMaxState[0][i]+1e-6,eta) for i in range(len(motionStateParams))]
+vect2 = [np.arange(0,minMaxState[1][i]-1e-6,-eta) for i in range(len(motionStateParams))]
+stateCent = [sorted(np.concatenate((vect1[i],vect2[i][1:]))) for i in range(len(motionStateParams))]
+tmp1 = [[stateCent[i][len(stateCent[i])-1],stateCent[i][0]] for i in range(len(motionStateParams))]  #based on 0 having no offset
+minMaxStateCent = map(list,zip(*tmp1))  # bounds on the continuous state centroid
+print stateCent
+print minMaxState
+print minMaxStateCent
+maxCtrl = [int(np.floor(np.true_divide((motionControlParams[i][0] - motionControlParams[i][1]),mu))) for i in range(len(motionControlParams))] #greatest index
+tmp = [[motionControlParams[i][0]+1e-6,motionControlParams[i][1]-1e-6] for i in range(len(motionControlParams))]  #based on 0 having no offset
+minMaxCtrl = map(list,zip(*tmp))  # absolute bounds on the continuous controls
+vect1 = [np.arange(0,minMaxCtrl[0][i]+1e-6,mu) for i in range(len(motionControlParams))]
+vect2 = [np.arange(0,minMaxCtrl[1][i]-1e-6,-mu) for i in range(len(motionControlParams))]
+ctrlCent = [sorted(np.concatenate((vect1[i],vect2[i][1:]))) for i in range(len(motionControlParams))]
+tmp1 = [[ctrlCent[i][len(ctrlCent[i])-1],ctrlCent[i][0]] for i in range(len(motionControlParams))]  #based on 0 having no offset
+minMaxCtrlCent = map(list,zip(*tmp1))  # bounds on the continuous state centroid
+print ctrlCent
+print minMaxCtrl
+print minMaxCtrlCent
 
 # ====================================================================
 # Read motion state outputs from the input file
@@ -253,6 +272,15 @@ def actionLoop():
     screenBuffer = screenBuffer.convert()
     screenBuffer.fill((64, 64, 64)) # Dark Gray
 
+    # Initialize the plot window where we will be displaying the continuous trajectory
+    fig = plt.figure()
+    plt.axis([xmin,xmax,ymin,ymax])
+    plt.ion()
+    plt.show()
+    print specFile
+    img = mpimg.imread(specFile)
+    imgplot = plt.imshow(img,extent=[xmin,xmax,ymax,ymin],interpolation='none')
+
     # Open Slugs
     slugsProcess = subprocess.Popen(slugsLink+" --interactiveStrategy "+slugsinfile+" "+bddinfile, shell=True, bufsize=1048000, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
@@ -334,8 +362,9 @@ def actionLoop():
     motionState = np.array(motionStateRaw)*eta + np.array(minMaxStateCent[1])
     motionState = list(np.minimum(np.maximum(motionState,np.array(minMaxState[1])),np.array(minMaxState[0])))
     for i in xrange(0,len(motionState)):
-        exec(motionStateVars[i]+str("=motionState[i]"))
-        exec(motionStateVars[i]+str("raw=motionStateRaw[i]"))
+        exec(motionStateVars[i]+"=motionState[i]")
+        exec(motionStateVars[i]+"raw=motionStateRaw[i]")
+        exec(motionStateVars[i]+"vect=["+motionStateVars[i]+"]*(numMinorIters+1)")
 
     loopNumber = 0
     isPaused = False
@@ -365,10 +394,12 @@ def actionLoop():
         motionCtrl = np.array(motionCtrlRaw)*mu + np.array(minMaxCtrlCent[1])
         motionCtrl = list(np.minimum(np.maximum(motionCtrl,np.array(minMaxCtrl[1])),np.array(minMaxCtrl[0])))
         for i in xrange(0,len(motionCtrl)):
-            exec(motionControlVars[i]+str("=motionCtrl[i]"))
-            exec(motionControlVars[i]+str("raw=motionCtrlRaw[i]"))
+            exec(motionControlVars[i]+"=motionCtrl[i]")
+            exec(motionControlVars[i]+"raw=motionCtrlRaw[i]")
         print vraw, wraw
         print xraw, yraw, thetaraw
+        print v, w
+        print x, y, theta
 
         # Draw pickup/drop
         for i,ap in enumerate(outputAPs):
@@ -431,6 +462,14 @@ def actionLoop():
         pygame.draw.circle(screenBuffer, (192,32,32), ((robotX+1)*MAGNIFY+MAGNIFY/2,(robotY+1)*MAGNIFY+MAGNIFY/2) , MAGNIFY/3-2, 0)
         pygame.draw.circle(screenBuffer, (255,255,255), ((robotX+1)*MAGNIFY+MAGNIFY/2,(robotY+1)*MAGNIFY+MAGNIFY/2) , MAGNIFY/3-1, 1)
         pygame.draw.circle(screenBuffer, (0,0,0), ((robotX+1)*MAGNIFY+MAGNIFY/2,(robotY+1)*MAGNIFY+MAGNIFY/2) , MAGNIFY/3, 1)
+        
+        if not(any([int(currentState[0:len(inputAPs)])])):
+            plt.plot(xvect,yvect,'b')
+            plt.scatter(x,y,c='b')
+        else:
+            plt.plot(xvect,yvect,'r')
+            plt.scatter(x,y,c='r')
+        plt.draw()
 
         # Draw cell frames
         for xc in xrange(0,xsize):
@@ -497,24 +536,43 @@ def actionLoop():
 
         # Execute the continuous transition
         if not isPaused:
-            for i,varName in enumerate(motionStateVars):
-                exec(systemModel[i])
             preMotionState = []
+            for step in range(numMinorIters):
+                for i,varName in enumerate(motionStateVars):
+                    # one-sample update
+                    #exec(varName+" = "+varName+"_dot*tau + "+varName) 
+                    # create a smooth profile between points
+                    exec(systemModel[i])  # update the state derivative
+                    exec(varName+"vect[step] = "+varName)
+                    exec(varName+" = "+varName+"_dot*tau/numMinorIters + "+varName) 
+                    print eval(varName+"_dot")
+                    if varName in cyclicVars:
+                        #cyclicVarDiff = eval(varName+"max-"+varName+"min")
+                        #print eval("(np.floor(np.true_divide(cyclicVarDiff,eta))+1)*eta+"+varName+"min")
+                        #exec("tmp="+varName+"min, "+varName+"max")
+                        if eval(varName) < -np.pi:
+                        #if eval(varName) < eval(varName+"min-eta/2"):
+                            #exec(varName+"="+varName+"+2*np.pi")
+                            exec(varName+"="+varName+"+2*3.2")
+                        elif eval(varName) > np.pi:
+                        #elif eval(varName) > eval("(np.floor(np.true_divide(cyclicVarDiff,eta))+1)*eta+"+varName+"min"):
+                            #exec(varName+"="+varName+"-2*np.pi")
+                            exec(varName+"="+varName+"-2*3.2")
+                    else:
+                        exec(varName+" = min([max(["+varName+",minMaxState[1][i]]),minMaxState[0][i]])")
             for i,varName in enumerate(motionStateVars):
-                # one-sample update
-                exec(varName+" = "+varName+"_dot*tau + "+varName)
-                if varName in cyclicVars:
-                    if eval(varName) < eval(varName+"min"):
-                        exec(varName+"="+varName+"+2*np.pi")
-                    elif eval(varName) > eval(varName+"max"):
-                        exec(varName+"="+varName+"-2*np.pi")
-                else:
-                    exec(varName+" = min([max(["+varName+",minMaxState[1][i]]),minMaxState[0][i]])")
+                print minMaxState[1][i], minMaxState[0][i]
+                exec(varName+"vect[step+1] = "+varName) 
                 #exec(varName+"raw = np.true_divide(("+varName+" - "+varName+"min),eta)")
-                exec(varName+"raw = int(round(np.true_divide(("+varName+" - "+varName+"min),eta)))")
+                #exec(varName+"raw = int(np.floor(np.true_divide(("+varName+" - minMaxState[1][i]),eta)))")
+                exec("tmp = np.abs([stateCent[i][j]-"+varName+" for j in range(len(stateCent[i]))])")
+                #print tmp
+                val,indx = min((val,indx) for (indx,val) in enumerate(tmp))
+                exec(varName+"raw = indx")
+                #exec(varName+"raw = int(round(np.true_divide(("+varName+" - "+varName+"min),eta)))")
                 preMotionState += bin(eval(varName+'raw'))[2:].zfill(len(motionStateBitVars[i]))[::-1]  # rid ourselves of the leading '0b' and reverse BDD bit ordering
                 preMotionState = ''.join(preMotionState)
-
+            print xvect
             # preserve the ordering in outputAPs
             preMotionStateRev = ''
             for i,ap in enumerate(outputAPs):
@@ -530,10 +588,16 @@ def actionLoop():
             if nextLine.startswith("ERROR"):
                 screenBuffer.fill((192, 64, 64)) # Red!
                 # Keep the state the same
+
+                # print vraw, wraw
+                # print xraw, yraw, thetaraw
+                # print v, w
+                # print x, y, theta
+                # sys.exit('dynamics inconsistent with robot BDD')
             else:
                 print nextLine
                 currentState = nextLine[:len(inputAPs)]+preMotionStateRev+nextLine[len(preMotionState)+1:] 
-                print currentState
+                # print currentState
 
                 # Print a state header
                 if (loopNumber % 20)==1:
