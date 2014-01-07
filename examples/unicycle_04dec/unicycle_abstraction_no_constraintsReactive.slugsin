@@ -44,7 +44,10 @@ vbit3
 # if in reg(x>2.55,y>2.55), then prevent door8 from becoming true
 #| ! & xbit4 ybit4 ! door8'
 #| ! & | & & & xbit0 xbit1 xbit2 xbit3 xbit4 | & & & ybit0 ybit1 ybit2 ybit3 ybit4 ! door8'
-| ! & | | & & & ! xbit0 xbit1 xbit2 xbit3 & & & xbit0 xbit1 xbit2 xbit3 xbit4 | | & & & ! ybit0 ybit1 ybit2 ybit3 & & & ybit0 ybit1 ybit2 ybit3 ybit4 ! door8'
+#| ! & | | & & & ! xbit0 xbit1 xbit2 xbit3 & & & xbit0 xbit1 xbit2 xbit3 xbit4 | | & & & ! ybit0 ybit1 ybit2 ybit3 & & & ybit0 ybit1 ybit2 ybit3 ybit4 ! door8'
+| ! & | & xbit2 xbit3 xbit4 | & ybit2 ybit3 ybit4 ! door8'
+#| ! & & & ! xbit3 ! xbit4 ! ybit3 ! ybit4 ! door8'
+#! door8'
 
 [ENV_LIVENESS]
 1
@@ -54,9 +57,9 @@ vbit3
 
 [SYS_TRANS]
 # restrict forward velocity
-| | | | & & & vbit0' ! vbit1' vbit2' ! vbit3' & & & ! vbit0' vbit1' vbit2' ! vbit3' & & & vbit0' vbit1' vbit2' ! vbit3' & & & ! vbit0' ! vbit1' ! vbit2' vbit3' & & & vbit0' ! vbit1' ! vbit2' vbit3'
+#| | | | & & & vbit0' ! vbit1' vbit2' ! vbit3' & & & ! vbit0' vbit1' vbit2' ! vbit3' & & & vbit0' vbit1' vbit2' ! vbit3' & & & ! vbit0' ! vbit1' ! vbit2' vbit3' & & & vbit0' ! vbit1' ! vbit2' vbit3'
 #| | | & & & ! vbit0' vbit1' vbit2' ! vbit3' & & & vbit0' vbit1' vbit2' ! vbit3' & & & ! vbit0' ! vbit1' ! vbit2' vbit3' & & & vbit0' ! vbit1' ! vbit2' vbit3'
-#| | & & & vbit0' vbit1' vbit2' ! vbit3' & & & ! vbit0' ! vbit1' ! vbit2' vbit3' & & & vbit0' ! vbit1' ! vbit2' vbit3'
+| | & & & vbit0' vbit1' vbit2' ! vbit3' & & & ! vbit0' ! vbit1' ! vbit2' vbit3' & & & vbit0' ! vbit1' ! vbit2' vbit3'
 #| & & & ! vbit0' ! vbit1' ! vbit2' vbit3' & & & vbit0' ! vbit1' ! vbit2' vbit3'
 
 # if door8 true, then do not enter reg(x>2.55,y>2.55)
