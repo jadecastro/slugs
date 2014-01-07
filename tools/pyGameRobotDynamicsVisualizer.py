@@ -14,6 +14,12 @@
 #   The files all need to have the same prefix, with the exception of the BDD file, where all things standing behind dots right of the last path separator character ("/") are stripped. This allows
 #   recycling the same .bdd file for many scenarios.
 
+# TODO:
+# 1. generate png automatically based on x & y propositions in spec
+# 2. how to change environment param?
+# 3. scaling the png appropriately (max x & y vs. map x & y)
+# 4. successively subtract states from each environment safety assumption to eventually get a "minimal" set for each assumption
+
 import math
 import os
 import sys, code
@@ -26,7 +32,6 @@ import itertools
 import Image
 import os, pygame, pygame.locals
 import numpy as np
-import itertools
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
@@ -34,7 +39,7 @@ import matplotlib.image as mpimg
 # Settings
 # ==================================
 MAGNIFY = 64
-numMinorIters = 20
+numMinorIters = 200
 
 # ==================================
 # Entry point
@@ -162,7 +167,7 @@ for i,varName in enumerate(motionStateVars):
         systemModel[i] = systemModel[i][0:systemModel[i].rfind('cos(')]+'np.'+systemModel[i][systemModel[i].rfind('cos('):]
     while systemModel[i].rfind('tan(') >= 0 and systemModel[i][systemModel[i].rfind('tan(')-3:systemModel[i].rfind('tan(')] != 'np.':
         systemModel[i] = systemModel[i][0:systemModel[i].rfind('tan(')]+'np.'+systemModel[i][systemModel[i].rfind('tan('):]
-maxMotion = [int(np.floor(np.true_divide((motionStateParams[i][0] - motionStateParams[i][1]),eta))) for i in range(len(motionStateParams))] #greatest index
+# maxMotion = [int(np.floor(np.true_divide((motionStateParams[i][0] - motionStateParams[i][1]),eta))) for i in range(len(motionStateParams))] #greatest index
 tmp = [[motionStateParams[i][0]+1e-6,motionStateParams[i][1]-1e-6] for i in range(len(motionStateParams))]  #based on 0 having no offset
 minMaxState = map(list,zip(*tmp))  # absolute bounds on the continuous states
 vect1 = [np.arange(0,minMaxState[0][i]+1e-6,eta) for i in range(len(motionStateParams))]
@@ -173,7 +178,7 @@ minMaxStateCent = map(list,zip(*tmp1))  # bounds on the continuous state centroi
 print stateCent
 print minMaxState
 print minMaxStateCent
-maxCtrl = [int(np.floor(np.true_divide((motionControlParams[i][0] - motionControlParams[i][1]),mu))) for i in range(len(motionControlParams))] #greatest index
+# maxCtrl = [int(np.floor(np.true_divide((motionControlParams[i][0] - motionControlParams[i][1]),mu))) for i in range(len(motionControlParams))] #greatest index
 tmp = [[motionControlParams[i][0]+1e-6,motionControlParams[i][1]-1e-6] for i in range(len(motionControlParams))]  #based on 0 having no offset
 minMaxCtrl = map(list,zip(*tmp))  # absolute bounds on the continuous controls
 vect1 = [np.arange(0,minMaxCtrl[0][i]+1e-6,mu) for i in range(len(motionControlParams))]
@@ -273,11 +278,14 @@ def actionLoop():
     screenBuffer.fill((64, 64, 64)) # Dark Gray
 
     # Initialize the plot window where we will be displaying the continuous trajectory
-    fig = plt.figure()
-    plt.axis([xmin,xmax,ymin,ymax])
+    # fig = plt.figure()
+    plt.axis([0,(xsize-1)*eta,0,(ysize-1)*eta])
+    #plt.axis([xmin,xmax,ymin,ymax])
+    #plt.axis([0.0,4.0,0.0,4.0])
     plt.ion()
     plt.show()
-    print specFile
+    plthdl0, = plt.plot([],[])
+    plthdl1, = plt.plot([],[])
     img = mpimg.imread(specFile)
     imgplot = plt.imshow(img,extent=[xmin,xmax,ymax,ymin],interpolation='none')
 
@@ -396,10 +404,12 @@ def actionLoop():
         for i in xrange(0,len(motionCtrl)):
             exec(motionControlVars[i]+"=motionCtrl[i]")
             exec(motionControlVars[i]+"raw=motionCtrlRaw[i]")
-        print vraw, wraw
-        print xraw, yraw, thetaraw
-        print v, w
-        print x, y, theta
+        # print vraw, wraw
+        # print xraw, yraw, thetaraw
+        # print v, w
+        # print x, y, theta
+        print xraw, yraw
+        print x, y
 
         # Draw pickup/drop
         for i,ap in enumerate(outputAPs):
@@ -462,13 +472,18 @@ def actionLoop():
         pygame.draw.circle(screenBuffer, (192,32,32), ((robotX+1)*MAGNIFY+MAGNIFY/2,(robotY+1)*MAGNIFY+MAGNIFY/2) , MAGNIFY/3-2, 0)
         pygame.draw.circle(screenBuffer, (255,255,255), ((robotX+1)*MAGNIFY+MAGNIFY/2,(robotY+1)*MAGNIFY+MAGNIFY/2) , MAGNIFY/3-1, 1)
         pygame.draw.circle(screenBuffer, (0,0,0), ((robotX+1)*MAGNIFY+MAGNIFY/2,(robotY+1)*MAGNIFY+MAGNIFY/2) , MAGNIFY/3, 1)
-        
-        if not(any([int(currentState[0:len(inputAPs)])])):
-            plt.plot(xvect,yvect,'b')
-            plt.scatter(x,y,c='b')
+
+        plthdl0.set_xdata(np.append(plthdl0.get_xdata(), xvect))
+        plthdl0.set_ydata(np.append(plthdl0.get_ydata(), yvect))
+        plthdl1.set_xdata(np.append(plthdl1.get_xdata(), x))
+        plthdl1.set_ydata(np.append(plthdl1.get_ydata(), y))
+        plthdl1.set_marker('o')
+        plthdl1.set_linestyle('None')
+        # TODO: turn only most recent marker red
+        if (any([int(currentState[0:len(inputAPs)])])):
+            plthdl1.set_markerfacecolor('r')
         else:
-            plt.plot(xvect,yvect,'r')
-            plt.scatter(x,y,c='r')
+            plthdl1.set_markerfacecolor('g')
         plt.draw()
 
         # Draw cell frames
@@ -545,23 +560,25 @@ def actionLoop():
                     exec(systemModel[i])  # update the state derivative
                     exec(varName+"vect[step] = "+varName)
                     exec(varName+" = "+varName+"_dot*tau/numMinorIters + "+varName) 
-                    print eval(varName+"_dot")
+                    # print eval(varName+"_dot")
                     if varName in cyclicVars:
                         #cyclicVarDiff = eval(varName+"max-"+varName+"min")
                         #print eval("(np.floor(np.true_divide(cyclicVarDiff,eta))+1)*eta+"+varName+"min")
                         #exec("tmp="+varName+"min, "+varName+"max")
+                        #if eval(varName) < -np.pi-eta/2:
                         if eval(varName) < -np.pi:
                         #if eval(varName) < eval(varName+"min-eta/2"):
-                            #exec(varName+"="+varName+"+2*np.pi")
-                            exec(varName+"="+varName+"+2*3.2")
+                            exec(varName+"="+varName+"+2*np.pi")
+                            #exec(varName+"="+varName+"+2*3.2")
+                        #elif eval(varName) > np.pi+eta/2:
                         elif eval(varName) > np.pi:
                         #elif eval(varName) > eval("(np.floor(np.true_divide(cyclicVarDiff,eta))+1)*eta+"+varName+"min"):
-                            #exec(varName+"="+varName+"-2*np.pi")
-                            exec(varName+"="+varName+"-2*3.2")
+                            exec(varName+"="+varName+"-2*np.pi")
+                            #exec(varName+"="+varName+"-2*3.2")
                     else:
                         exec(varName+" = min([max(["+varName+",minMaxState[1][i]]),minMaxState[0][i]])")
             for i,varName in enumerate(motionStateVars):
-                print minMaxState[1][i], minMaxState[0][i]
+                # print minMaxState[1][i], minMaxState[0][i]
                 exec(varName+"vect[step+1] = "+varName) 
                 #exec(varName+"raw = np.true_divide(("+varName+" - "+varName+"min),eta)")
                 #exec(varName+"raw = int(np.floor(np.true_divide(("+varName+" - minMaxState[1][i]),eta)))")
@@ -572,7 +589,7 @@ def actionLoop():
                 #exec(varName+"raw = int(round(np.true_divide(("+varName+" - "+varName+"min),eta)))")
                 preMotionState += bin(eval(varName+'raw'))[2:].zfill(len(motionStateBitVars[i]))[::-1]  # rid ourselves of the leading '0b' and reverse BDD bit ordering
                 preMotionState = ''.join(preMotionState)
-            print xvect
+            # print xvect
             # preserve the ordering in outputAPs
             preMotionStateRev = ''
             for i,ap in enumerate(outputAPs):
@@ -593,7 +610,10 @@ def actionLoop():
                 # print xraw, yraw, thetaraw
                 # print v, w
                 # print x, y, theta
+                print xraw, yraw
+                print x, y
                 # sys.exit('dynamics inconsistent with robot BDD')
+                # isPaused = True
             else:
                 print nextLine
                 currentState = nextLine[:len(inputAPs)]+preMotionStateRev+nextLine[len(preMotionState)+1:] 
