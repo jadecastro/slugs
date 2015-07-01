@@ -70,11 +70,13 @@ public:
  */
 void execute() {
         T::execute();
+        std::cerr << " Computing counterstrategy.... " << "\n";
         if (!realizable) {
             if (outputFilename=="") {
                 computeAndPrintExplicitStateStrategy(std::cout);
             } else {
                 std::ofstream of(outputFilename.c_str());
+                std::cerr << "Will be saving counterstrategy to: " << outputFilename << "\n";
                 if (of.fail()) {
                     SlugsException ex(false);
                     ex << "Error: Could not open output file'" << outputFilename << "\n";
@@ -89,7 +91,7 @@ void execute() {
                 of.close();
             }
         }
-        BF_newDumpDot(*this,foundCutConditions,NULL,"/tmp/foundCutConditions.dot");
+        BF_newDumpDot(*this,foundCutConditions,"PreInput PreOutput PostInput PostOutput","/tmp/foundCutConditions.dot");
 }
 
     
@@ -114,7 +116,7 @@ void computeAndPrintExplicitStateStrategy(std::ostream &outputStream) {
     // Prepare positional strategies for the individual goals
     std::vector<std::vector<BF> > positionalStrategiesForTheIndividualGoals(livenessAssumptions.size());
     for (unsigned int i=0;i<livenessAssumptions.size();i++) {
-        //BF casesCovered = mgr.constantFalse();
+        // BF casesCovered = mgr.constantFalse();
         std::vector<BF> strategy(livenessGuarantees.size()+1);
         for (unsigned int j=0;j<livenessGuarantees.size()+1;j++) {
             strategy[j] = mgr.constantFalse();
@@ -125,6 +127,13 @@ void computeAndPrintExplicitStateStrategy(std::ostream &outputStream) {
                 //Essentially, the choice of which guarantee to pursue can be thought of as a system "move".
                 //The environment always to chooses that prevent the appropriate guarantee.
                 strategy[boost::get<1>(*it)] |= boost::get<2>(*it).UnivAbstract(varCubePostOutput) & !(strategy[boost::get<1>(*it)].ExistAbstract(varCubePost));
+                // BF newCases = boost::get<2>(*it) & !casesCovered;
+                // strategy[boost::get<1>(*it)] |= newCases & boost::get<2>(*it);
+                // casesCovered |= newCases;
+
+                std::stringstream fname;
+                fname << "/tmp/strategy" << i << "by" << boost::get<1>(*it) << ".dot";
+                BF_newDumpDot(*this,strategy[boost::get<1>(*it)],NULL,fname.str());
             }
         }
         positionalStrategiesForTheIndividualGoals[i] = strategy;
@@ -194,17 +203,17 @@ void computeAndPrintExplicitStateStrategy(std::ostream &outputStream) {
             // save any combination of pre variables and post inputs found that are not included in player 1's strategy
             BF_newDumpDot(*this,remainingTransitions,NULL,"/tmp/remainingTransitions.dot");
 	    
-	    // add this transition to the set of possible edges to cut to prevent livelock for goal j.
-	    // removing any edge should allow the system to escape livelock.
-	    livelockCut |= (remainingTransitions.ExistAbstract(varCubePost)).Implies(!remainingTransitions.ExistAbstract(varCubePre));
+	        // add this transition to the set of possible edges to cut to prevent livelock for goal j.
+	        // removing any edge should allow the system to escape livelock.
+	        livelockCut |= (remainingTransitions.ExistAbstract(varCubePost)) & (!remainingTransitions.ExistAbstract(varCubePre));
 
-	    BF_newDumpDot(*this,!(remainingTransitions).ExistAbstract(varCubePre),NULL,"/tmp/candidateWinningThisState.dot");
-            std::stringstream ss1;
-            std::stringstream ss2;
-            ss1 << "/tmp/candidateWinning" << stateNum << ".dot";
-            ss2 << "/tmp/remainingTransitions" << stateNum << ".dot";
-            BF_newDumpDot(*this,(!remainingTransitions.ExistAbstract(varCubePre)) & remainingTransitions.ExistAbstract(varCubePost),NULL,ss1.str());
-            BF_newDumpDot(*this,remainingTransitions,NULL,ss2.str());
+	        // BF_newDumpDot(*this,!(remainingTransitions).ExistAbstract(varCubePre),NULL,"/tmp/candidateWinningThisState.dot");
+         //    std::stringstream ss1;
+         //    std::stringstream ss2;
+         //    ss1 << "/tmp/candidateWinning" << stateNum << ".dot";
+         //    ss2 << "/tmp/remainingTransitions" << stateNum << ".dot";
+         //    BF_newDumpDot(*this,(!remainingTransitions.ExistAbstract(varCubePre)) & remainingTransitions.ExistAbstract(varCubePost),NULL,ss1.str());
+         //    BF_newDumpDot(*this,remainingTransitions,NULL,ss2.str());
 
             // Choose one next input and stick to it!
             // BF_newDumpDot(*this,remainingTransitions,NULL,"/tmp/remainingTransitionsBefore.dot");

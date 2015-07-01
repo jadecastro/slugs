@@ -52,6 +52,7 @@ public:
     
  void computeWinningPositions() {
 
+    BF_newDumpDot(*this,safetyEnv,NULL,"/tmp/safetyEnvGame.dot");
     // The greatest fixed point - called "Z" in the GR(1) synthesis paper
     BFFixedPoint mu2(mgr.constantFalse());
 

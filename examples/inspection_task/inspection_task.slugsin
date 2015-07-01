@@ -21,25 +21,35 @@ r23
 target3
 r34
 target4
-
-[ENV_INIT]
-# start in r1
-r1c
+y1
+#y21
+#y21
+#y23
+#y23
+#y12
+#y12
+#y34
+#y34
 
 [ENV_TRANS]
-| ! target1c & & ! defect2 ! defect3 ! defect4
-| ! target2c & & ! defect1 ! defect3 ! defect4
-| ! target3c & & ! defect1 ! defect2 ! defect4
-| ! target4c & & ! defect1 ! defect2 ! defect3
-
-| | | defect1' defect2' defect3' defect4'
+| ! & & y1 target1c r12 | | r1c' target1c' r12c'
+#(y21 & target1c & r1) -> (r12c' | target1c' | r1c')
+#(y23 & target2c & r12) -> (r23c' | target2c' | r12c')
+#(y12 & target2c & r23) -> (r12c' | target2c' | r23c')
+#(y34 & target4c & target4) -> (target4c' | r34c')
+| ! target1c' & & ! defect2' ! defect3' ! defect4'
+| ! target2c' & & ! defect1' ! defect3' ! defect4'
+| ! target3c' & & ! defect1' ! defect2' ! defect4'
+| ! target4c' & & ! defect1' ! defect2' ! defect3'
+| ! r1c' ! | | defect2' defect3' defect4'
+| ! r12c' ! | defect3' defect4'
+| ! r23c' ! | defect1' defect4'
+| ! r34c' ! | defect1' defect2'
 | ! defect1' ! | | defect2' defect3' defect4'
 | ! defect2' ! | | defect1' defect3' defect4'
 | ! defect3' ! | | defect1' defect2' defect4'
 | ! defect4' ! | | defect1' defect2' defect3'
-
 #HOW CAN THE MOTION CONTROLLERS RESOLVE: this is where the nondet would come in
-
 # staying in place
 | ! & r1c r1 r1c'
 | ! & target1c target1 target1c'
@@ -49,53 +59,82 @@ r1c
 | ! & target3c target3 target3c'
 | ! & r34c r34 r34c'
 | ! & target4c target4 target4c'
-
 #possible movement
-#| ! & rc0 r1 | rc0' rc3'
-| ! & rc0 r1 | | rc0' rc2' rc3'
-#| ! & rc0 r1 | rc0' rc1'
-
-| ! & rc1 r0 | rc0' rc1'
-| ! & rc1 r2 | rc1' rc2'
-
-| ! & rc2 r0 | rc0' rc2'
-| ! & rc2 r3 | rc2' rc3'
-| ! & rc2 r1 | rc1' rc2'
-
-| ! & rc3 r0 | rc0' rc2'
-
+| ! & r1c target1 | r1c' target1c'
+| ! & target1c r1 | target1c' r1c'
+| ! & target1c r12 | target1c' r12c'
+| ! & r12c target1 | r12c' target1c'
+| ! & r12c target2 | r12c' target2c'
+| ! & target2c r12 | target2c' r12c'
+| ! & target2c r23 | target2c' r23c'
+| ! & r23c target2 | r23c' target2c'
+| ! & r23c target3 | r23c' target3c'
+| ! & target3c r23 | target3c' r23c'
+| ! & target3c r34 | target3c' r34c'
+| ! & r34c target3 | r34c' target3c'
+| ! & r34c target4 | r34c' target4c'
+| ! & target4c r34 | target4c' r34c'
 # MUTUAL EXCLUSION
-| | | rc0' rc1' rc2' rc3'
-| ! rc0' ! | | rc1' rc2' rc3'
-| ! rc1' ! | | rc0' rc2' rc3'
-| ! rc2' ! | | rc0' rc1' rc3'
-| ! rc3' ! | | rc0' rc1' rc2'
+| | | | | | | r1c' target1c' r12c' target2c' r23c' target3c' r34c' target4c'
+| ! r1c' ! | | | | | | target1c' r12c' target2c' r23c' target3c' r34c' target4c'
+| ! target1c' ! | | | | | | r1c' r12c' target2c' r23c' target3c' r34c' target4c'
+| ! r12c' ! | | | | | | r1c' target1c' target2c' r23c' target3c' r34c' target4c'
+| ! target2c' ! | | | | | | r1c' target1c' r12c' r23c' target3c' r34c' target4c'
+| ! r23c' ! | | | | | | r1c' target1c' r12c' target2c' target3c' r34c' target4c'
+| ! target3c' ! | | | | | | r1c' target1c' r12c' target2c' r23c' r34c' target4c'
+| ! r34c' ! | | | | | | r1c' target1c' r12c' target2c' r23c' target3c' target4c'
+| ! target4c' ! | | | | | | r1c' target1c' r12c' target2c' r23c' target3c' r34c'
 
-[ENV_LIVENESS]
-#! s
-
-# MOTION COMPLETION
-| | | & r0 rc0' & r1 rc1' & r2 rc2' & r3 rc3'
-
-[SYS_INIT]
-& & & r0 ! r1 ! r2 ! r3
+[ENV_INIT]
+# start in r1
+#r1c & !target1c & !r12c & !target2c & !r23c & !target3c & !r34c & !target4c & !defect1 & !defect2 & !defect3 & !defect3
+& & & ! r23c ! target3c ! r34c ! target4c
 
 [SYS_TRANS]
-#| ! s' ! | rc2' rc3'
-#| ! s' ! rc1'
-
+| & ! & | r12c' y1 | r12c' target1c' ! y1' & & | r12c' y1 | r12c' target1c' y1'
+#((r1c' | y21) & (r1c' | target1c')) <-> y21'
+#((r12c' | y23) & (r12c' | target2c')) <-> y23'
+#((r23c' | y12) & (r23c' | target2c')) <-> y12'
+#((target4c' | y34) & (target4c')) <-> y34'
+| ! defect1' & ! | | target2c' target3c' target4c' ! | | target2' target3' target4'
+| ! defect2' & ! | | target1c' target3c' target4c' ! | | target1' target3' target4'
+| ! defect3' & ! | | target1c' target2c' target4c' ! | | target1' target2' target4'
+| ! defect4' & ! | | target1c' target2c' target3c' ! | | target1' target2' target3'
 # HOW CAN THE MOTION CONTROLLERS BE ACTIVATED?
-| ! rc0 | r0 r1
-| ! rc1 | | r0 r1 r2
-| ! rc2 | | | r0 r1 r2 r3
-| ! rc3 | | r0 r2 r3
-
+| ! r1c | r1 target1
+| ! target1c | | target1 r1 r12
+| ! r12c | | r12 target1 target2
+| ! target2c | | target2 r12 r23
+| ! r23c | | r23 target2 target3
+| ! target3c | | target3 r23 r34
+| ! r34c | | r34 target3 target4
+| ! target4c | target4 r34
 # MUTUAL EXCLUSION
-| | | r0' r1' r2' r3'
-| ! r0' ! | | r1' r2' r3'
-| ! r1' ! | | r0' r2' r3'
-| ! r2' ! | | r0' r1' r3'
-| ! r3' ! | | r0' r1' r2'
+| | | | | | | r1' target1' r12' target2' r23' target3' r34' target4'
+| ! r1' ! | | | | | | target1' r12' target2' r23' target3' r34' target4'
+| ! target1' ! | | | | | | r1' r12' target2' r23' target3' r34' target4'
+| ! r12' ! | | | | | | r1' target1' target2' r23' target3' r34' target4'
+| ! target2' ! | | | | | | r1' target1' r12' r23' target3' r34' target4'
+| ! r23' ! | | | | | | r1' target1' r12' target2' target3' r34' target4'
+| ! target3' ! | | | | | | r1' target1' r12' target2' r23' r34' target4'
+| ! r34' ! | | | | | | r1' target1' r12' target2' r23' target3' target4'
+| ! target4' ! | | | | | | r1' target1' r12' target2' r23' target3' r34'
+
+[SYS_INIT]
+#r1 & !target1 & !r12 & !target2 & !r23 & !target3 & !r34 & !target4
+& & & ! r23 ! target3 ! r34 ! target4
+
+[ENV_LIVENESS]
+# MOTION COMPLETION
+| | | | | | | & r1 r1c' & target1 target1c' & r12 r12c' & target2 target2c' & r23 r23c' & target3 target3c' & r34 r34c' & target4 target4c'
 
 [SYS_LIVENESS]
+| ! ! | | | defect1 defect2 defect3 defect4 target1c
+| ! ! | | | defect1 defect2 defect3 defect4 target2c
+| ! ! | | | defect1 defect2 defect3 defect4 target3c
+| ! ! | | | defect1 defect2 defect3 defect4 target4c
+| ! defect1 target1c
+| ! defect2 target2c
+| ! defect3 target3c
+| ! defect4 target4c
 

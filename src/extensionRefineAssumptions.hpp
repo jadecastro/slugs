@@ -46,7 +46,9 @@ protected:
     std::vector<std::pair<unsigned int,BF> > strategyDumpingDataPlayer2;
     BF winningPositionsPlayer2;
     bool initSpecialRoboticsSemantics = false;
-    // bool oneStepRecovery = true;
+    bool oneStepRecovery = true;
+    bool saveCounterstrategy = true;
+    bool userFeedbackFlag = true;
 
     SlugsVectorOfVarBFs preInputVars{PreInput,this};
     SlugsVectorOfVarBFs postInputVars{PostInput,this};
@@ -58,8 +60,10 @@ protected:
 
     std::vector<unsigned int> varIdxDeadlockPre;
     std::vector<unsigned int> varIdxDeadlockPost;
+    std::vector<unsigned int> varIdxDeadlockMemory;
     std::vector<unsigned int> varIdxRobot1Pre;
     std::vector<unsigned int> varIdxRobot2Pre;
+    std::vector<unsigned int> deadlockVariableVector;
 
     std::vector<BF> candidateCutConditionsArray;
     std::vector<BF> candidateCutConditionsArrayVisualOnly;
@@ -86,6 +90,7 @@ public:
         for (unsigned int robotNum=0;robotNum<numRobots;robotNum++) {
             std::stringstream deadlockVariableString;
             deadlockVariableString << "rob" << robotNum+1 << "_deadlock";  // Look for variables labeled "deadlock_1", "deadlock_2", etc.
+            deadlockVariableVector.push_back(robotNum+1);
             // std::cerr << " Looking for: " << deadlockVariableString.str() << "\n";
             for (unsigned int j=0;j<variables.size()/2;j++) {
                 // std::cerr << "    in: " << variableNames[2*j] << " (pre) \n";
@@ -105,6 +110,7 @@ public:
             for (unsigned int robotJ=robotI+1;robotJ<numRobots;robotJ++) {
                 std::stringstream deadlockVariableString;
                 deadlockVariableString << "rob" << robotI+1 << robotJ+1 << "_deadlock"; 
+                deadlockVariableVector.push_back(10*(robotI+1)+robotJ+1);
                 // std::cerr << " Looking for: " << deadlockVariableString.str() << "\n";
                 for (unsigned int j=0;j<variables.size()/2;j++) {
                     // std::cerr << "    in: " << variableNames[2*j] << " (pre) \n";
@@ -115,6 +121,27 @@ public:
                     }
                     if ( variableNames[2*j+1].compare(0,deadlockVariableString.str().size(),deadlockVariableString.str()) == 0 ) {
                         varIdxDeadlockPost.push_back(2*j+1);
+                        // std::cerr << " Found variable: " << variableNames[2*j+1] << " at " << j << "\n";
+                    }
+                }
+            }
+        }
+        // memory propositions
+        int numDeadlockMemPropsPerRobot = 2;
+        for (unsigned int deadlockMemNum=0;deadlockMemNum<numDeadlockMemPropsPerRobot;deadlockMemNum++) {
+            for (unsigned int robotNum=0;robotNum<numRobots;robotNum++) {
+                std::stringstream deadlockVariableString;
+                deadlockVariableString << "m_rob" << robotNum+1 << "_deadlock" << deadlockMemNum+1;  // Look for variables labeled "deadlock_1", "deadlock_2", etc.
+                // std::cerr << " Looking for: " << deadlockVariableString.str() << "\n";
+                for (unsigned int j=0;j<variables.size()/2;j++) {
+                    // std::cerr << "    in: " << variableNames[2*j] << " (pre) \n";
+                    // std::cerr << "    in: " << variableNames[2*j+1] << " (post) \n";
+                    if ( variableNames[2*j].compare(0,deadlockVariableString.str().size(),deadlockVariableString.str()) == 0 ) {
+                        varIdxDeadlockMemory.push_back(2*j);
+                        // std::cerr << " Found variable: " << variableNames[2*j] << " at " << j << "\n";
+                    }
+                    if ( variableNames[2*j+1].compare(0,deadlockVariableString.str().size(),deadlockVariableString.str()) == 0 ) {
+                        varIdxDeadlockMemory.push_back(2*j+1);
                         // std::cerr << " Found variable: " << variableNames[2*j+1] << " at " << j << "\n";
                     }
                 }
@@ -140,7 +167,9 @@ public:
 
         T::execute();
         if (!realizable) {
-            extractPatternsFromWinningStates();
+            std::ofstream of2(outputFilenameStrategy.c_str());
+            extractPatternsFromWinningStates(of2);
+            of2.close();
         }
 
         BF_newDumpDot(*this,safetySys,NULL,"/tmp/safetySysBefore.dot");
@@ -205,7 +234,9 @@ public:
             failingPreAndPostConditions = mgr.constantFalse();
             T::execute();
             if (!realizable) {
-                extractPatternsFromWinningStates();
+                std::ofstream of2(outputFilenameStrategy.c_str());
+                extractPatternsFromWinningStates(of2);
+                of2.close();
             }
             iter++;
         }
@@ -290,13 +321,80 @@ public:
                         // BF_newDumpDot(*this,tmp3,"PreInput PreOutput PostInput PostOutput","/tmp/candidateCheckSingleCase.dot");
                         candidateCheckVisual |= candidateCutConditionsArrayVisualOnly[i];
 
+                        // Display the single-assignment to the user in sentence form
+                        if (userFeedbackFlag){
+                            std::stringstream userFeedback;
+                            bool firstStatement = true;
+                            userFeedback << "The environment should not cause ";
+                            for (unsigned int j=0;j<varIdxDeadlockPre.size();j++) {
+                                BF testForTrueDeadlockPost = ( (candidateCutConditionsArrayVisualOnly[i] & variables[varIdxDeadlockPost[j]]).ExistAbstractSingleVar(variables[varIdxDeadlockPost[j]]) );
+                                BF testForFalseDeadlockPost = ( (candidateCutConditionsArrayVisualOnly[i] & !variables[varIdxDeadlockPost[j]]).ExistAbstractSingleVar(variables[varIdxDeadlockPost[j]]) );
+                                // std::cerr << "   iteration: " << iter << "  testIfChangingPost: " << !testForTrueDeadlockPost.isFalse() << !testForFalseDeadlockPost.isFalse() << "\n";
+
+                                if (!testForTrueDeadlockPost.isFalse() & testForFalseDeadlockPost.isFalse()){
+                                    if (firstStatement) {
+                                        userFeedback << variableNames[varIdxDeadlockPre[j]];
+                                        firstStatement = false;
+                                    } else {
+                                        userFeedback << " and " << variableNames[varIdxDeadlockPre[j]];
+                                    }
+                                }
+                            } 
+                            userFeedback << " if ";
+                            firstStatement = true;
+                            for (unsigned int j=0;j<variables.size()/2;j++) {
+                                BF testForTruePre = ( (candidateCutConditionsArrayVisualOnly[i] & variables[2*j]).ExistAbstractSingleVar(variables[2*j]) );
+                                // std::cerr << "   iteration: " << iter << " testIfChangingPre: " << !testForTrueDeadlockPre.isFalse() << !testForFalseDeadlockPre.isFalse() << "\n";
+                                BF testForFalsePre = ( (candidateCutConditionsArrayVisualOnly[i] & !variables[2*j]).ExistAbstractSingleVar(variables[2*j]) );
+                                // std::cerr << "   iteration: " << iter << "  testIfChangingPost: " << !testForTrueDeadlockPost.isFalse() << !testForFalseDeadlockPost.isFalse() << "\n";
+                                
+                                bool testAntecedant = !testForTruePre.isFalse() & testForFalsePre.isFalse();
+                                if (testAntecedant){
+                                    if (firstStatement) {
+                                        userFeedback << variableNames[2*j];
+                                        firstStatement = false;
+                                    } else {
+                                        userFeedback << " and " << variableNames[2*j];
+                                    }
+                                }
+                            }
+                            userFeedback << " are true in the current step and ";
+                            firstStatement = true;
+                            for (unsigned int j=0;j<variables.size()/2;j++) {
+                                BF testForTruePost = ( (candidateCutConditionsArrayVisualOnly[i] & variables[2*j+1]).ExistAbstractSingleVar(variables[2*j+1]) );
+                                // std::cerr << "   iteration: " << iter << " testIfChangingPre: " << !testForTrueDeadlockPre.isFalse() << !testForFalseDeadlockPre.isFalse() << "\n";
+                                BF testForFalsePost = ( (candidateCutConditionsArrayVisualOnly[i] & !variables[2*j+1]).ExistAbstractSingleVar(variables[2*j+1]) );
+                                // std::cerr << "   iteration: " << iter << "  testIfChangingPost: " << !testForTrueDeadlockPost.isFalse() << !testForFalseDeadlockPost.isFalse() << "\n";
+                                
+                                bool testAntecedant = !testForTruePost.isFalse() & testForFalsePost.isFalse();
+                                for (unsigned int j1=0;j1<varIdxDeadlockPost.size();j1++) {
+                                    if (varIdxDeadlockPost[j1] == 2*j+1) {
+                                        testAntecedant = false;
+                                    }
+                                }
+                                if (testAntecedant){
+                                    if (firstStatement) {
+                                        userFeedback << variableNames[2*j];
+                                        firstStatement = false;
+                                    } else {
+                                        userFeedback << " and " << variableNames[2*j];
+                                    }
+                                }
+                            }
+                            userFeedback << " are true in the next step.\n";
+                            std::cerr << userFeedback.str();
+                        }
                     } else {
                         std::cerr << "  iteration " << i << " faslified the env\n";
                     }
                 }
                 // check whether or not we're doing anything
                 if ((!safetyEnv & safetyEnvLast).isFalse()) {
-                    throw SlugsException(false,"Error: did not find any new safety assumptions!\n");
+                    checkRealizabilityPlayer2();
+                    if (realizable) {
+                        std::cerr << "RESULT: Specification is realizable.\n";
+                    }
+                    throw SlugsException(false,"Error: did not find any new safety assumptions!\n");                    
                 }
                 safetyEnvLast = safetyEnv;
                 BF_newDumpDot(*this,safetyEnv,NULL,"/tmp/safetyEnvAFTER.dot");
@@ -308,7 +406,9 @@ public:
 
                 T::execute();
                 if (!realizable) {
-                    extractPatternsFromWinningStates();
+                    std::ofstream of2(outputFilenameStrategy.c_str());
+                    extractPatternsFromWinningStates(of2);
+                    of2.close();
                 }
             // }
             // else {
@@ -356,7 +456,7 @@ public:
                     BF winningNoRecovery = candidateCutConditionsPlayer2;
                     // oneStepRecovery = true;
                     candidateCutConditionsPlayer2 = mgr.constantFalse();
-                    computeAndPrintExplicitStateStrategyPlayer2(std::cout,true);
+                    computeAndPrintExplicitStateStrategyPlayer2(std::cout,oneStepRecovery);
                     BF_newDumpDot(*this,(candidateCutConditionsPlayer2 & !winningNoRecovery),"PreInput PreOutput PostInput PostOutput","/tmp/recoverableTransitions.dot");
                 }
             } else {
@@ -371,9 +471,11 @@ public:
                     candidateCutConditionsPlayer2 = mgr.constantFalse();
                     computeAndPrintExplicitStateStrategyPlayer2(of2,false);
                     BF winningNoRecovery = candidateCutConditionsPlayer2;
+                    of2.close();
+                    std::ofstream of2(outputFilenameStrategy.c_str());
                     // oneStepRecovery = true;
                     candidateCutConditionsPlayer2 = mgr.constantFalse();
-                    computeAndPrintExplicitStateStrategyPlayer2(of2,true);
+                    computeAndPrintExplicitStateStrategyPlayer2(of2,oneStepRecovery);
                     BF_newDumpDot(*this,(candidateCutConditionsPlayer2 & !winningNoRecovery),"PreInput PreOutput PostInput PostOutput","/tmp/recoverableTransitions.dot");
                     BF tmp = (candidateCutConditionsPlayer2 & !winningNoRecovery).ExistAbstract(varCubePost);
                     for (unsigned int j=0;j<varIdxRobot1Pre.size();j++) {
@@ -395,11 +497,34 @@ public:
             }
         } else {
             std::cerr << "RESULT: Specification is unrealizable.\n";
+            // std::cerr << " Computing and saving the counterstrategy.... " << "\n";
+            // if (!realizable) {
+            //     if (outputFilenameStrategy=="") {
+            //         computeAndPrintExplicitStateStrategy(std::cout);
+            //     } else {
+            //         std::stringstream nameStr
+            //         outputFilenameCtr = outputFilenameStrategy.c_str() << 'ctr'
+            //         std::ofstream of(outputFilenameCtr);
+            //         std::cerr << "Will be saving counterstrategy to: " << outputFilenameCtr << "\n";
+            //         if (of.fail()) {
+            //             SlugsException ex(false);
+            //             ex << "Error: Could not open output file'" << outputFilenameCtr << "\n";
+            //             throw ex;
+            //         }
+            //         computeAndPrintExplicitStateStrategy(of);
+            //         if (of.fail()) {
+            //             SlugsException ex(false);
+            //             ex << "Error: Writing to output file'" << outputFilenameCtr << "failed. \n";
+            //             throw ex;
+            //         }
+            //         of.close();
+            //     }
+            // }
         }
 
     }
 
-    void extractPatternsFromWinningStates() {
+    void extractPatternsFromWinningStates(std::ostream &outputStream) {
 
         // We don't want any reordering from this point onwards, as
         // the BDD manipulations from this point onwards are 'kind of simple'.
@@ -470,16 +595,39 @@ public:
 
         // Extract strategy
         int iter = 0;
+        int numFound = 0;
+        // while (numFound<1) {
+            // std::cerr << "    numFound: " << numFound;
         while (todoList.size()>0) {
             std::pair<size_t, std::pair<unsigned int, unsigned int> > current = todoList.front();
             todoList.pop_front();
             unsigned int stateNum = lookupTableForPastStates[current];
             BF currentPossibilities = bfsUsedInTheLookupTable[stateNum];
 
+            bool first = true;
+            if (saveCounterstrategy) {
+                // Print state information
+                outputStream << "State " << stateNum << " with rank (" << current.second.first << "," << current.second.second << ") -> <";
+                for (unsigned int i=0;i<variables.size();i++) {
+                    if (doesVariableInheritType(i,Pre)) {
+                        if (first) {
+                            first = false;
+                        } else {
+                            outputStream << ", ";
+                        }
+                        outputStream << variableNames[i] << ":";
+                        outputStream << (((currentPossibilities & variables[i]).isFalse())?"0":"1");
+                    }
+                }
+
+                outputStream << ">\n\tWith successors : ";    
+                first = true;            
+            }
+
             // Can we enforce a deadlock?
             BF deadlockInput = (currentPossibilities & safetyEnv & !safetySys).UnivAbstract(varCubePostOutput);
             if (deadlockInput!=mgr.constantFalse()) {
-          addDeadlocked(deadlockInput, current, bfsUsedInTheLookupTable,  lookupTableForPastStates, deadlockCut);
+          addDeadlocked(deadlockInput, current, bfsUsedInTheLookupTable,  lookupTableForPastStates, outputStream, deadlockCut);
             } else {
 
                 // No deadlock in sight -> Jump to a different liveness guarantee if necessary.
@@ -524,10 +672,31 @@ public:
                     
                     // testIfChanging |= ( !testForTrueDeadlockPre.isFalse() & testForFalseDeadlockPre.isFalse() & !testForTrueDeadlockPost.isFalse() & testForFalseDeadlockPost.isFalse() ); // | ( testForTrueDeadlockPre.isFalse() & !testForFalseDeadlockPre.isFalse() & !testForTrueDeadlockPost.isFalse() & testForFalseDeadlockPost.isFalse() );
                     bool testIfChangingTmp = testForTrueDeadlockPre.isFalse() & !testForFalseDeadlockPre.isFalse() & !testForTrueDeadlockPost.isFalse() & testForFalseDeadlockPost.isFalse();
+                    
                     if (testIfChangingTmp){
-                        std::cerr << "    cut found at: " << variableNames[varIdxDeadlockPre[j]] << "\n";
-                        testIfChanging.push_back(testIfChangingTmp);
-                        idxDeadlockRisingEdge.push_back(j);
+                        int number = deadlockVariableVector[j];
+                        // Loop over all robots involved in this deadlock sensor proposition
+                        while (number) { 
+                            std::stringstream robotID;
+                            robotID << "m_rob" << number%10 << "_deadlock";
+                            number /= 10;
+                            for (unsigned int j1=0;j1<variableNames.size();j1++) {
+                                if ( variableNames[j1].compare(0,robotID.str().size(),robotID.str()) == 0 ) {                                
+                                    BF testForTrueMemProp = ( (remainingTransitions & variables[j1]).ExistAbstractSingleVar(variables[j1]) );
+                                    BF testForFalseMemProp = ( (remainingTransitions & !variables[j1]).ExistAbstractSingleVar(variables[j1]) );
+                                    std::cerr << "    memprop " << variableNames[j1] << " " << bool( !testForTrueMemProp.isFalse() & testForFalseMemProp.isFalse() ) << "\n";
+                                    // If any of the memory propositions are already set, then save the cut and break the loop.  
+                                    // NB: this is temporary and assumes that all regions have exactly two faces.
+                                    // if ( !testForTrueMemProp.isFalse() & testForFalseMemProp.isFalse() ) {
+                                        std::cerr << "    memprop " << variableNames[j1] << "\n";
+                                        std::cerr << "    cut found for: " << variableNames[varIdxDeadlockPre[j]] << "\n";
+                                        testIfChanging.push_back(testIfChangingTmp);
+                                        idxDeadlockRisingEdge.push_back(j);
+                                        break;
+                                    // }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -569,9 +738,11 @@ public:
                     // }                    
 
                     std::cerr << "   iteration: " << iter << " to be cut.\n";
+                    numFound++;
 
                     BF_newDumpDot(*this,!postDeadlockCut.ExistAbstract(varCubePre),"PreInput PreOutput PostInput PostOutput","/tmp/postDeadlockCut.dot");
                     BF transitionsAsImplication = (transitionsWithoutDeadlock).Implies(!postDeadlockCut);
+                    // BF transitionsAsImplication = (transitionsWithoutDeadlock.ExistAbstract(varCubePost)).Implies(transitionsWithoutDeadlock.ExistAbstract(varCubePostOutput).ExistAbstract(varCubePre) & !postDeadlockCut);
                     BF_newDumpDot(*this,transitionsWithoutDeadlock & postDeadlockCut,"PreInput PreOutput PostInput PostOutput","/tmp/livenessCutsSingleVisual.dot");
                     BF_newDumpDot(*this,transitionsAsImplication,"PreInput PreOutput PostInput PostOutput","/tmp/livenessCuts.dot");
                     // std::stringstream fname;
@@ -617,8 +788,20 @@ public:
                         tn = lookupTableForPastStates[target];
                     }
 
+                    if (saveCounterstrategy) {
+                        // Print
+                        if (first) {
+                            first = false;
+                        } else {
+                            outputStream << ", ";
+                        }
+                        outputStream << tn;
+                    }
+
                 }
             }
+
+            if (saveCounterstrategy) {outputStream << "\n";}
             iter++;
         }
 
@@ -636,7 +819,7 @@ public:
         //The outputvalues are omitted (indeed, no valuation exists that satisfies the system safeties)
         //Format compatible with JTLV counterstrategy
 
-      void addDeadlocked(BF targetPositionCandidateSet, std::pair<size_t, std::pair<unsigned int, unsigned int> > current, std::vector<BF> &bfsUsedInTheLookupTable, std::map<std::pair<size_t, std::pair<unsigned int, unsigned int> >, unsigned int > &lookupTableForPastStates, BF &deadlockCut) {
+      void addDeadlocked(BF targetPositionCandidateSet, std::pair<size_t, std::pair<unsigned int, unsigned int> > current, std::vector<BF> &bfsUsedInTheLookupTable, std::map<std::pair<size_t, std::pair<unsigned int, unsigned int> >, unsigned int > &lookupTableForPastStates, std::ostream &outputStream, BF &deadlockCut) {
         
         BF newCombination = determinize(targetPositionCandidateSet, postVars) ;
         
@@ -648,7 +831,38 @@ public:
         //cut to exclude current transition from counterstrategy
         deadlockCut &= currentPossibilities.Implies(!newCombination.SwapVariables(varVectorPost,varVectorPre));
         // deadlockCut &= (currentPossibilities.ExistAbstract(varCubePost)).Implies(!newCombination.SwapVariables(varVectorPre,varVectorPost).ExistAbstract(varCubePre).ExistAbstract(varCubePostOutput)); 
-        
+
+        if (saveCounterstrategy) {
+            std::pair<size_t, std::pair<unsigned int, unsigned int> > target = std::pair<size_t, std::pair<unsigned int, unsigned int> >(newCombination.getHashCode(),std::pair<unsigned int, unsigned int>(current.second.first, current.second.second));
+            unsigned int tn;
+            
+            if (lookupTableForPastStates.count(target)==0) {
+                tn = lookupTableForPastStates[target] = bfsUsedInTheLookupTable.size();
+                bfsUsedInTheLookupTable.push_back(newCombination);   
+                outputStream << tn << "\n";
+                
+                //Note that since we are printing here, we usually end up with the states being printed out of order.
+                //TOTO: print in order
+                outputStream << "State " << tn << " with rank (" << current.second.first << "," << current.second.second << ") -> <";
+                bool first = true;
+                for (unsigned int i=0;i<variables.size();i++) {
+                    if (doesVariableInheritType(i,PreInput)) {
+                        if (first) {
+                            first = false;
+                        } else {
+                            outputStream << ", ";
+                        }
+                        outputStream << variableNames[i] << ":";
+                        outputStream << (((newCombination & variables[i]).isFalse())?"0":"1");
+                    }
+                }
+                outputStream << ">\n\tWith no successors.";
+
+            } else {
+                tn = lookupTableForPastStates[target];
+                outputStream << tn;
+            }
+        }
     }
 
     void checkRealizabilityPlayer2() {
