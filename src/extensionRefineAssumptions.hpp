@@ -67,6 +67,8 @@ protected:
 
     std::vector<BF> candidateCutConditionsArray;
     std::vector<BF> candidateCutConditionsArrayVisualOnly;
+    std::vector<BF> candidateCutConditionsArrayStrongRestriction;
+    std::vector<BF> candidateCutConditionsArrayStrongRestrictionVisualOnly;
 
     BF safetyEnvBeforeAdditions;
     BF candidateCutConditionsPlayer2;
@@ -276,8 +278,12 @@ public:
                 //    Note: assuming here that we are aiming to modify the first entry. 
                 // BF tmpLivenessAssumptions = livenessAssumptions[0];
                 // BF tmpSafetyEnv = safetyEnv;
+                if (candidateCutConditionsArray.size() == 0) {
+                    candidateCutConditionsArray = candidateCutConditionsArrayStrongRestriction;
+                    candidateCutConditionsArrayVisualOnly = candidateCutConditionsArrayStrongRestrictionVisualOnly;
+                }
                 for (unsigned int i=0;i<candidateCutConditionsArray.size();i++) {
-                    std::cerr << "  iteration " << i << "\n";
+                    std::cerr << "  Condition " << i << ":\n";
 
                     if ( (!(safetyEnv & candidateCutConditionsArray[i]).isFalse())) {
                         // std::cerr << "  iteration " << i << "\n";
@@ -660,8 +666,10 @@ public:
                 // BF_newDumpDot(*this,remainingTransitions,"PreInput PreOutput PostInput PostOutput",fname1.str());  
 
                 std::vector<bool> testIfChanging;
+                std::vector<bool> testIfChangingStrongRestriction;
                 std::vector<BF> deadlockVarsChanging;
                 std::vector<unsigned int> idxDeadlockRisingEdge;
+                std::vector<unsigned int> idxDeadlockRisingEdgeStrongRestriction;
                 for (unsigned int j=0;j<varIdxDeadlockPre.size();j++) {
                     BF testForTrueDeadlockPre = ( (remainingTransitions & variables[varIdxDeadlockPre[j]]).ExistAbstractSingleVar(variables[varIdxDeadlockPre[j]]) );
                     BF testForFalseDeadlockPre = ( (remainingTransitions & !variables[varIdxDeadlockPre[j]]).ExistAbstractSingleVar(variables[varIdxDeadlockPre[j]]) );
@@ -675,7 +683,7 @@ public:
                     
                     if (testIfChangingTmp){
                         int number = deadlockVariableVector[j];
-                        // Loop over all robots involved in this deadlock sensor proposition
+                        // Loop over all robots involved in this deadlock sensor proposition to single out the 'weakest' restrictions to the env - i.e. prevent all exits from becoming blocked
                         while (number) { 
                             std::stringstream robotID;
                             robotID << "m_rob" << number%10 << "_deadlock";
@@ -684,26 +692,44 @@ public:
                                 if ( variableNames[j1].compare(0,robotID.str().size(),robotID.str()) == 0 ) {                                
                                     BF testForTrueMemProp = ( (remainingTransitions & variables[j1]).ExistAbstractSingleVar(variables[j1]) );
                                     BF testForFalseMemProp = ( (remainingTransitions & !variables[j1]).ExistAbstractSingleVar(variables[j1]) );
-                                    std::cerr << "    memprop " << variableNames[j1] << " " << bool( !testForTrueMemProp.isFalse() & testForFalseMemProp.isFalse() ) << "\n";
+                                    // std::cerr << "    memprop " << variableNames[j1] << " " << bool( !testForTrueMemProp.isFalse() & testForFalseMemProp.isFalse() ) << "\n";
                                     // If any of the memory propositions are already set, then save the cut and break the loop.  
                                     // NB: this is temporary and assumes that all regions have exactly two faces.
-                                    // if ( !testForTrueMemProp.isFalse() & testForFalseMemProp.isFalse() ) {
+                                    if ( !testForTrueMemProp.isFalse() & testForFalseMemProp.isFalse() ) {
                                         std::cerr << "    memprop " << variableNames[j1] << "\n";
                                         std::cerr << "    cut found for: " << variableNames[varIdxDeadlockPre[j]] << "\n";
                                         testIfChanging.push_back(testIfChangingTmp);
                                         idxDeadlockRisingEdge.push_back(j);
                                         break;
-                                    // }
+                                    }
                                 }
                             }
+                        }
+                        
+                        if (testIfChanging.size() == 0) {
+                            std::cerr << " **** failed to find any weak conditions.\n"; 
+                            testIfChangingStrongRestriction.clear();
+                            testIfChangingStrongRestriction.push_back(testIfChangingTmp);
+                            idxDeadlockRisingEdgeStrongRestriction.clear();
+                            idxDeadlockRisingEdgeStrongRestriction.push_back(j);
                         }
                     }
                 }
 
-                if (testIfChanging.size() > 0) {
+                // If no weak conditions can be found in this counterstrategy, apply a stronger condition to the env instead.
+                // candidateCutConditionsArrayStrongRestriction.push_back(transitionsAsImplication);
+                // candidateCutConditionsArrayStrongRestrictionVisualOnly.push_back(transitionsWithoutDeadlock & postDeadlockCut);
+
+                // Save the entire set of cuts if weak conditions found; otherwise store exactly one cut (as another variable) as a strengthened restriction for this counterstrategy.
+                // std::cout << " testIfChanging: " << testIfChanging.size() << "\n";
+                // std::cout << " testIfChangingStrongRestriction: " << testIfChangingStrongRestriction.size() << "\n";
+                if (testIfChanging.size() > 0 || testIfChangingStrongRestriction.size() > 0 ) {
                     BF transitionsWithoutDeadlock = remainingTransitions;
                     BF postDeadlockCut = mgr.constantFalse();
 
+                    if (testIfChangingStrongRestriction.size() > 0) {
+                        idxDeadlockRisingEdge = idxDeadlockRisingEdgeStrongRestriction;
+                    }
                     for (unsigned int j=0;j<varIdxDeadlockPost.size();j++) {
                         // std::cerr << "    testing variable: " << varIdxDeadlockPost[j] << variableNames[varIdxDeadlockPost[j]] << "\n";
                         bool isRisingEdge = false;
@@ -748,8 +774,16 @@ public:
                     // std::stringstream fname;
                     // fname << "/tmp/livenessCuts" << iter << ".dot";
                     // BF_newDumpDot(*this,transitionsAsImplication,"PreInput PreOutput PostInput PostOutput",fname.str());  
-                    candidateCutConditionsArray.push_back(transitionsAsImplication);
-                    candidateCutConditionsArrayVisualOnly.push_back(transitionsWithoutDeadlock & postDeadlockCut);
+                    
+                    if (testIfChanging.size() > 0) {
+                        candidateCutConditionsArray.push_back(transitionsAsImplication);
+                        candidateCutConditionsArrayVisualOnly.push_back(transitionsWithoutDeadlock & postDeadlockCut);
+                    } else {
+                        candidateCutConditionsArrayStrongRestriction.clear();
+                        candidateCutConditionsArrayStrongRestrictionVisualOnly.clear();
+                        candidateCutConditionsArrayStrongRestriction.push_back(transitionsAsImplication);
+                        candidateCutConditionsArrayStrongRestrictionVisualOnly.push_back(transitionsWithoutDeadlock & postDeadlockCut);
+                    }
                 }
 
                 // Switching goals
