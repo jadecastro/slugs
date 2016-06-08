@@ -3,7 +3,7 @@
 
 #include "gr1context.hpp"
 
-template<class T, bool initSpecialRoboticsSemantics> class XNonDeterministicMotion : public T {
+template<class T, bool initSpecialRoboticsSemantics> class XNonDeterministicMotion : public virtual T {
 protected:
 
     // Inherited stuff used

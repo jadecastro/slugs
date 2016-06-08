@@ -57,8 +57,11 @@ public:
     BFFixedPoint mu2(mgr.constantFalse());
 
     // Iterate until we have found a fixed point
+    unsigned int count = 0;
     for (;!mu2.isFixedPointReached();) {
 
+        std::cerr << "   outer fixed point iteration: " << count << "\n";
+        count++;
         // To extract a counterstrategy in case of unrealizability, we need to store a sequence of 'preferred' transitions in the
         // game structure. These preferred transitions only need to be computed during the last execution of the middle
         // greatest fixed point. Since we don't know which one is the last one, we store them in every iteration,
@@ -70,6 +73,7 @@ public:
         // goal. Then, after we have iterated over the goals, we can update mu2.
         BF nextContraintsForGoals = mgr.constantFalse();
         for (unsigned int j=0;j<livenessGuarantees.size();j++) {
+            // std::cerr << " j: " << j << "\n";
 
             // Start computing the transitions that lead closer to the goal and lead to a position that is not yet known to be losing (for the environment).
             // Start with the ones that actually represent reaching the goal (which is a transition in this implementation as we can have
@@ -81,7 +85,19 @@ public:
             for (;!nu1.isFixedPointReached();) {
 
                 // New middle iteration has begun -> revert to the data before the first iteration.
-                strategyDumpingData = strategyDumpingDataOld;
+                //  - Note that we want to revert only the data stored for the current 'j' index, leaving the other liveness guarantees intact.
+                std::vector<boost::tuple<unsigned int, unsigned int,BF> > strategyAllButCurrentLivenessGuarantee;
+                for (auto it = strategyDumpingData.begin();it!=strategyDumpingData.end();it++)  {
+                    if (boost::get<1>(*it) != j) {
+                        strategyAllButCurrentLivenessGuarantee.push_back(boost::make_tuple(boost::get<0>(*it),boost::get<1>(*it),boost::get<2>(*it)));
+                    }
+                }
+                strategyDumpingData = strategyAllButCurrentLivenessGuarantee;
+                for (auto it = strategyDumpingDataOld.begin();it!=strategyDumpingDataOld.end();it++) {
+                    if (boost::get<1>(*it) == j) {
+                        strategyDumpingData.push_back(boost::make_tuple(boost::get<0>(*it),j,boost::get<2>(*it)));
+                    }
+                }
 
                 // Update the set of transitions that lead closer to the goal.
                 livetransitions &= nu1.getValue().SwapVariables(varVectorPre,varVectorPost);
@@ -90,6 +106,7 @@ public:
                 // of them into the variable 'goodForAnyLivenessAssumption'.
                 BF goodForAllLivenessAssumptions = nu1.getValue();
                 for (unsigned int i=0;i<livenessAssumptions.size();i++) {
+                    // std::cerr << "   i: " << i << "\n";
 
                     // Prepare the variable 'foundPaths' that contains the transitions that stay within the inner-most
                     // greatest fixed point or get closer to the goal. Only used for counterstrategy extraction
@@ -130,6 +147,7 @@ public:
 
     }
 
+    std::cerr << "  Outer fixed point reached!\n";
     // We found the set of winning positions
     winningPositions = mu2.getValue();
     BF_newDumpDot(*this,winningPositions,NULL,"/tmp/winningPositionsPlayer1.dot");

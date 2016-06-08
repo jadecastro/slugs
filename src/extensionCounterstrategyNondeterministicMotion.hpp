@@ -10,7 +10,7 @@
  *
  * Includes support for the special robotics semantic
  */
-template<class T, bool specialRoboticsSemantics> class XCounterStrategyNondeterministicMotion : public T {
+template<class T, bool specialRoboticsSemantics> class XCounterStrategyNondeterministicMotion : public virtual T {
 protected:
 
     // Inherited stuff used

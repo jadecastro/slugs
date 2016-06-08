@@ -35,13 +35,16 @@ HEADERS += BFAbstractionLibrary/BF.h BFAbstractionLibrary/BFCudd.h gr1context.hp
     extensionExtractExplicitStrategyNondeterministicMotion.hpp \
     extensionInteractiveStrategyNondeterministicMotion.hpp \
     extensionGetCounterstrategyForNondeterministicMotion.hpp \
+    extensionRefineAssumptions.hpp \
     extensionRefineAssumptionsForNondeterministicMotion.hpp \
     extensionInteractiveRefineAssumptionsForNondeterministicMotion.hpp \
-    extensionNondeterministicMotionFastSlow.hpp
+    extensionNondeterministicMotionFastSlow.hpp \
+    test.hpp \
+    findRevisions.h
 
 SOURCES += main.cpp BFAbstractionLibrary/bddDump.cpp BFAbstractionLibrary/BFCuddVarVector.cpp BFAbstractionLibrary/BFCudd.cpp BFAbstractionLibrary/BFCuddManager.cpp \
     BFAbstractionLibrary/BFCuddVarCube.cpp tools.cpp synthesisAlgorithm.cpp synthesisContextBasics.cpp variableManager.cpp \
-    BFAbstractionLibrary/BFCuddMintermEnumerator.cpp
+    BFAbstractionLibrary/BFCuddMintermEnumerator.cpp 
 
 TARGET = slugs
 INCLUDEPATH = ../lib/cudd-2.5.0/include BFAbstractionLibrary
